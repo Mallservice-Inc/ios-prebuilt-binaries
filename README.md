@@ -14,7 +14,13 @@ Google 公式の配布は `.tar.gz` です。そのため詰め替えが要り�
 
 ## 中身
 
-Google 公式の配布物**そのまま**です。改変していません。
+Google 公式の配布物から取り出した二進**そのもの**です。中身は書き換えていません。
+
+⚠️ ただし**入れ物だけ組み直しています**。公式の配布は「静的フレームワーク」形式で、
+そのまま Swift Package Manager に載せると 🔴 **Xcode が動的フレームワークと誤認して
+アプリに埋め込もうとし、`did not contain an Info.plist` でビルドが止まります**。
+`libtool -static` で `.a` にし、`xcodebuild -create-xcframework -library` で
+「ライブラリ形式」の xcframework に詰め直してあります。機械語は同じものです。
 
 | 元 | |
 |---|---|
@@ -31,8 +37,18 @@ CocoaPods が入れる物と**1 バイトも違いません**（照合済み）�
 curl -L -o tflite.tar.gz "<上の配布元 URL>"
 shasum -a 256 tflite.tar.gz          # 上の値と一致することを確かめる
 tar xzf tflite.tar.gz
-cd TensorFlowLiteC-2.12.0/Frameworks
+
 for f in TensorFlowLiteC TensorFlowLiteCCoreML TensorFlowLiteCMetal; do
+  args=()
+  for slice in ios-arm64 ios-arm64_x86_64-simulator; do
+    src="TensorFlowLiteC-2.12.0/Frameworks/$f.xcframework/$slice/$f.framework"
+    mkdir -p "out/$f/$slice"
+    libtool -static -o "out/$f/$slice/lib$f.a" "$src/$f"
+    args+=(-library "$PWD/out/$f/$slice/lib$f.a")
+    [ -d "$src/Headers" ] && cp -R "$src/Headers" "out/$f/$slice/Headers" \
+      && args+=(-headers "$PWD/out/$f/$slice/Headers")
+  done
+  xcodebuild -create-xcframework "${args[@]}" -output "$f.xcframework"
   ditto -c -k --sequesterRsrc --keepParent "$f.xcframework" "$f.xcframework.zip"
   swift package compute-checksum "$f.xcframework.zip"
 done
